@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Puzzlegram prototype</title>
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+</head>
+<body>
+    <div class="container mt-5">
+        <h1>Puzzlegram prototype: memory recall with speech recognition</h1>
+        <p>Speak into the microphone...</p>
+        <p id="output"></p>
+
+        <div id="conversation" class="conversation mt-4"></div>
+        <div class="row mt-3">
+            <div class="col">
+                <div class="input-group">
+                    <input type="text" id="userInput" class="form-control" placeholder="Type your message...">
+                    <input type="text" id="imageUrl" class="form-control" placeholder="Enter image URL...">
+                    <div class="input-group-append">
+                        <button class="btn btn-primary" type="button" onclick="stopRecognitionAndSend()">Send</button>
+                    </div>
+                </div>
+<!--                 <form id="uploadForm">
+                    <label for="fileUpload">Choose a file:</label>
+                    <input type="file" id="fileUpload" name="fileUpload">
+                </form> -->
+            </div>
+            <div class="col">
+                <button id="toggleRecognitionButton" class="btn btn-success" onclick="toggleRecognition()">Start Recognition</button>
+            </div>
+        </div>
+
+        <audio id="audio" controls autoplay style="display:none;"></audio>
+    </div>
+
+    <script>
+        const output = document.getElementById('output');
+        const statusIndicator = document.getElementById('statusIndicator');
+        const statusText = document.getElementById('statusText');
+        const conversation = document.getElementById('conversation');
+        let recognition = null;
+        let recognitionActive = false;
+        let interimTranscript = '';
+        let finalTranscript = '';
+
+        function toggleRecognition() {
+            const button = document.getElementById('toggleRecognitionButton');
+            if (!recognitionActive) {
+                startRecognition();
+                button.textContent = 'Stop Recognition';
+            } else {
+                stopRecognition();
+                button.textContent = 'Start Recognition';
+            }
+        }
+
+
+        function startRecognition() {
+            const audio = document.getElementById('audio');
+            audio.pause(); // Pause audio playback before starting recognition
+
+            recognition = new webkitSpeechRecognition() || new SpeechRecognition();
+            recognition.lang = 'en-US';
+            recognition.interimResults = true;
+            recognition.continuous = true; // Set continuous flag to true
+
+            recognition.onstart = function() {
+                recognitionActive = true;
+                finalTranscript = ''
+                console.log('Speech Recognition On');
+            }
+
+            recognition.onresult = function(event) {
+                let newInterimTranscript = '';
+                let newFinalTranscript = '';
+
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        newFinalTranscript += event.results[i][0].transcript + ' '; // Accumulate new final transcript
+                    } else {
+                        newInterimTranscript += event.results[i][0].transcript + ' '; // Accumulate new interim results
+                    }
+                }
+
+                // Append new interim and final results to the existing transcripts
+                interimTranscript += newInterimTranscript;
+                finalTranscript += newFinalTranscript;
+
+                output.textContent = 'Me: ' + finalTranscript.trim(); // Display only the final transcript
+            }
+
+            recognition.start();
+        }
+
+        function stopRecognition() {
+            if (recognition) {
+                recognitionActive = false; // Set recognition as inactive
+                recognition.stop();
+            }
+        }
+
+        function stopRecognitionAndSend() {
+            const userInput = document.getElementById('userInput').value.trim();
+            const imageUrl = document.getElementById('imageUrl').value.trim();
+            const button = document.getElementById('toggleRecognitionButton');
+            stopRecognition();
+            button.textContent = 'Start Recognition';
+            let textToSend = userInput || finalTranscript;
+            
+            if (textToSend || imageUrl) { // Check if the typed message or image URL is not empty
+                sendRequest(textToSend, imageUrl);
+                document.getElementById('userInput').value = ''; // Clear the input field after sending
+                document.getElementById('imageUrl').value = ''; // Clear the image URL field after sending
+                finalTranscript = ''; // Clear final transcript when recognition is manually stopped
+            }
+        }
+
+        function sendRequest(prompt, imageUrl) {
+            const requestBody = {
+                prompt: prompt,
+                image_url: imageUrl, // Include the image URL in the request body
+            };
+
+            // const formData = new FormData();
+            // formData.append('fileUpload', fileUpload);
+            // formData.append('jsonData', new Blob([JSON.stringify(requestBody)], {type : 'application/json'}));
+
+            fetch('https://2aca-84-248-118-230.ngrok-free.app', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    // 'Content-Type': 'multipart/form-data',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                body: JSON.stringify(requestBody)
+            })
+            .then(response => response.json())
+            .then(data => {
+                speak(data.completion, 'Salli');
+                appendMessage('You', prompt + (imageUrl ? ` [Image: ${imageUrl}]` : ''), 'user');
+                appendMessage('Puzzlegram', data.completion, 'puzzlegram');
+            })
+            .catch(error => {
+                console.error('Error sending request to server: ', error);
+            });
+        }
+
+        function speak(text, voice) {
+            const audio = document.getElementById('audio');
+            audio.src = 'https://api.streamelements.com/kappa/v2/speech?voice=' + encodeURIComponent(voice) + '&text=' + encodeURIComponent(text);
+            audio.play();
+        }
+
+        function appendMessage(sender, message, className) {
+            const messageElement = document.createElement('div');
+            messageElement.textContent = `${sender}: ${message}`;
+            messageElement.classList.add('message');
+            messageElement.classList.add(className);
+            conversation.appendChild(messageElement);
+            conversation.scrollTop = conversation.scrollHeight;
+        }
+    </script>
+</body>
+</html>
